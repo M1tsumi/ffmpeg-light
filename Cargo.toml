@@ -1,0 +1,32 @@
+[package]
+name = "ffmpeg-light"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+license = "Apache-2.0"
+description = "A small Rust crate that wraps a few common FFmpeg tasks"
+repository = "https://github.com/M1tsumi/ffmpeg-light"  # Placeholder; update with actual repo
+documentation = "https://docs.rs/ffmpeg-light"
+categories = ["multimedia", "api-bindings"]
+keywords = ["ffmpeg", "video", "audio", "transcode"]
+readme = "README.md"
+
+[dependencies]
+which = "4.4"
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[features]
+default = []
+tokio = ["dep:tokio"]
+tracing = ["dep:tracing"]
+
+[dependencies.tokio]
+version = "1.0"
+features = ["process"]
+optional = true
+
+[dependencies.tracing]
+version = "0.1"
+optional = true
