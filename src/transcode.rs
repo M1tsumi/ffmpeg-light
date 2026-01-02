@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::command::{FfmpegBinaryPaths, FfmpegCommand};
 use crate::config::FfmpegLocator;
 use crate::error::{Error, Result};
-use crate::filter::VideoFilter;
+use crate::filter::{AudioFilter, VideoFilter};
 
 /// Builder-style API for spinning up simple ffmpeg jobs.
 #[derive(Debug, Default)]
@@ -20,7 +20,8 @@ pub struct TranscodeBuilder {
     audio_bitrate: Option<u32>,
     frame_rate: Option<f64>,
     preset: Option<String>,
-    filters: Vec<VideoFilter>,
+    video_filters: Vec<VideoFilter>,
+    audio_filters: Vec<AudioFilter>,
     extra_args: Vec<OsString>,
     overwrite: bool,
 }
@@ -96,13 +97,25 @@ impl TranscodeBuilder {
 
     /// Convenience helper to scale output.
     pub fn size(self, width: u32, height: u32) -> Self {
-        self.add_filter(VideoFilter::Scale { width, height })
+        self.add_video_filter(VideoFilter::Scale { width, height })
     }
 
-    /// Push a filter into the video filter graph.
-    pub fn add_filter(mut self, filter: VideoFilter) -> Self {
-        self.filters.push(filter);
+    /// Add a video filter to the processing chain.
+    pub fn add_video_filter(mut self, filter: VideoFilter) -> Self {
+        self.video_filters.push(filter);
         self
+    }
+
+    /// Add an audio filter to the processing chain.
+    pub fn add_audio_filter(mut self, filter: AudioFilter) -> Self {
+        self.audio_filters.push(filter);
+        self
+    }
+
+    /// Backward compatibility: alias for `add_video_filter`.
+    #[deprecated(since = "0.2.0", note = "use add_video_filter() instead")]
+    pub fn add_filter(self, filter: VideoFilter) -> Self {
+        self.add_video_filter(filter)
     }
 
     /// Pass a raw argument for advanced cases.
@@ -115,6 +128,61 @@ impl TranscodeBuilder {
     pub fn overwrite(mut self, enabled: bool) -> Self {
         self.overwrite = enabled;
         self
+    }
+
+    /// Accessor for the configured input path.
+    pub fn input_path(&self) -> Option<&Path> {
+        self.input.as_deref()
+    }
+
+    /// Accessor for the configured output path.
+    pub fn output_path(&self) -> Option<&Path> {
+        self.output.as_deref()
+    }
+
+    /// Accessor for the configured video codec.
+    pub fn video_codec_ref(&self) -> Option<&str> {
+        self.video_codec.as_deref()
+    }
+
+    /// Accessor for the configured audio codec.
+    pub fn audio_codec_ref(&self) -> Option<&str> {
+        self.audio_codec.as_deref()
+    }
+
+    /// Accessor for the configured video bitrate.
+    pub fn video_bitrate_value(&self) -> Option<u32> {
+        self.video_bitrate
+    }
+
+    /// Accessor for the configured audio bitrate.
+    pub fn audio_bitrate_value(&self) -> Option<u32> {
+        self.audio_bitrate
+    }
+
+    /// Accessor for the configured frame rate.
+    pub fn frame_rate_value(&self) -> Option<f64> {
+        self.frame_rate
+    }
+
+    /// Accessor for the configured preset.
+    pub fn preset_value(&self) -> Option<&str> {
+        self.preset.as_deref()
+    }
+
+    /// Returns whether overwriting outputs is enabled.
+    pub fn overwrite_enabled(&self) -> bool {
+        self.overwrite
+    }
+
+    /// Accessor for the configured video filter chain.
+    pub fn video_filters(&self) -> &[VideoFilter] {
+        &self.video_filters
+    }
+
+    /// Accessor for the configured audio filter chain.
+    pub fn audio_filters(&self) -> &[AudioFilter] {
+        &self.audio_filters
     }
 
     fn resolve_binaries(binaries: Option<FfmpegBinaryPaths>) -> Result<FfmpegBinaryPaths> {
@@ -135,7 +203,8 @@ impl TranscodeBuilder {
             audio_bitrate,
             frame_rate,
             preset,
-            filters,
+            video_filters,
+            audio_filters,
             extra_args,
             overwrite,
         } = self;
@@ -153,7 +222,8 @@ impl TranscodeBuilder {
             audio_bitrate,
             frame_rate,
             preset,
-            filters,
+            video_filters,
+            audio_filters,
             extra_args,
             overwrite,
         })
@@ -176,7 +246,8 @@ struct ValidatedTranscode {
     audio_bitrate: Option<u32>,
     frame_rate: Option<f64>,
     preset: Option<String>,
-    filters: Vec<VideoFilter>,
+    video_filters: Vec<VideoFilter>,
+    audio_filters: Vec<AudioFilter>,
     extra_args: Vec<OsString>,
     overwrite: bool,
 }
@@ -206,12 +277,22 @@ impl ValidatedTranscode {
             cmd.arg("-preset").arg(preset);
         }
 
-        let mut filter_strings: Vec<String> = Vec::new();
-        for filter in self.filters {
-            filter_strings.push(filter.to_filter_string());
+        // Build video filter chain
+        let mut vf_strings: Vec<String> = Vec::new();
+        for filter in self.video_filters {
+            vf_strings.push(filter.to_filter_string());
         }
-        if !filter_strings.is_empty() {
-            cmd.arg("-vf").arg(filter_strings.join(","));
+        if !vf_strings.is_empty() {
+            cmd.arg("-vf").arg(vf_strings.join(","));
+        }
+
+        // Build audio filter chain
+        let mut af_strings: Vec<String> = Vec::new();
+        for filter in self.audio_filters {
+            af_strings.push(filter.to_filter_string());
+        }
+        if !af_strings.is_empty() {
+            cmd.arg("-af").arg(af_strings.join(","));
         }
 
         for arg in self.extra_args {
@@ -222,3 +303,4 @@ impl ValidatedTranscode {
         cmd.run()
     }
 }
+

@@ -21,11 +21,11 @@ pub struct FfmpegBinaryPaths {
 impl FfmpegBinaryPaths {
     /// Locate binaries on PATH.
     pub fn auto() -> Result<Self> {
-        let ffmpeg = which("ffmpeg").map_err(|_| Error::BinaryNotFound {
-            binary: "ffmpeg".into(),
+        let ffmpeg = which("ffmpeg").map_err(|_| Error::FFmpegNotFound {
+            suggestion: Some("install ffmpeg with 'brew install ffmpeg' (macOS), 'apt install ffmpeg' (Linux), or download from ffmpeg.org".to_string()),
         })?;
-        let ffprobe = which("ffprobe").map_err(|_| Error::BinaryNotFound {
-            binary: "ffprobe".into(),
+        let ffprobe = which("ffprobe").map_err(|_| Error::FFmpegNotFound {
+            suggestion: Some("ffprobe comes with ffmpeg installation".to_string()),
         })?;
         Ok(Self { ffmpeg, ffprobe })
     }

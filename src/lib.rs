@@ -59,6 +59,7 @@ pub mod types;
 
 // Re-export main types for convenience
 pub use error::{Error, Result};
+pub use filter::{AudioFilter, VideoFilter};
 pub use probe::probe;
 pub use thumbnail::generate as generate_thumbnail;
 pub use transcode::TranscodeBuilder;

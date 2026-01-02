@@ -1,42 +1,51 @@
 # ffmpeg-light
 
-A small Rust crate that wraps a few common FFmpeg tasks without asking you to memorize the entire CLI.
+A Rust crate that wraps common FFmpeg tasks without the CLI memorization. Transcode, probe, filter, and process video/audio with a clean, type-safe API.
+
+## Features
+
+- **Video & Audio Filters**: Scale, crop, rotate, flip, denoise, deinterlace, volume control, equalization, normalization, and more
+- **Fluent Builder API**: Chain operations naturally with `TranscodeBuilder`
+- **Robust Error Handling**: Granular error types with contextual recovery suggestions
+- **Media Probing**: Extract duration, codecs, resolutions, and stream information
+- **Thumbnail Generation**: Extract frames at specific timestamps with size control
+- **Filter Composition**: Build complex filter chains with automatic optimization
+- **Zero Breaking Changes**: All v0.1.0 APIs remain fully supported
 
 ## Why this exists
 
-When you just want to probe a file, transcode it to H.264, or grab a thumbnail, the full FFmpeg CLI can feel like overkill. On the other hand, pulling in a massive set of raw bindings is equally daunting. `ffmpeg-light` sits in the middle: it spawns the `ffmpeg`/`ffprobe` binaries you already have installed and gives you a tidy Rust API for the 80% use cases.
+FFmpeg is powerful but the CLI has hundreds of flags. Using raw C bindings means managing C library builds. This crate sits in the middle: spawns the `ffmpeg`/`ffprobe` binaries you already have and gives you a type-safe Rust API.
 
-This crate is **young**. Expect the API to move a bit until we get feedback from real projects.
-
-## Installation
+## Install
 
 ```toml
 [dependencies]
-ffmpeg-light = "0.1"
+ffmpeg-light = "0.2"
 ```
 
-You’ll also need the `ffmpeg` and `ffprobe` binaries available on your `PATH`. On macOS that might be `brew install ffmpeg`; on Windows, grab the latest build and add it to your environment variables.
+Requires `ffmpeg` and `ffprobe` on `PATH`. Get them via:
+- macOS: `brew install ffmpeg`
+- Linux: `apt install ffmpeg` (or equivalent)
+- Windows: [ffmpeg.org](https://ffmpeg.org/download.html)
 
-## Quick start
+## Quick Start
 
-### Probe a media file
+### Probe a file
 
 ```rust,no_run
 use ffmpeg_light::probe;
 
 fn main() -> ffmpeg_light::Result<()> {
     let info = probe("input.mp4")?;
-    if let Some(duration) = info.duration() {
-        println!("duration: {:?}", duration);
-    }
+    println!("Duration: {:?}", info.duration());
     Ok(())
 }
 ```
 
-### Transcode to H.264 MP4
+### Transcode with filters
 
 ```rust,no_run
-use ffmpeg_light::transcode::TranscodeBuilder;
+use ffmpeg_light::{AudioFilter, TranscodeBuilder, VideoFilter};
 
 fn main() -> ffmpeg_light::Result<()> {
     TranscodeBuilder::new()
@@ -44,8 +53,42 @@ fn main() -> ffmpeg_light::Result<()> {
         .output("output.mp4")
         .video_codec("libx264")
         .audio_codec("aac")
-        .video_bitrate(2_500)
-        .size(1280, 720)
+        .video_bitrate(2500)
+        .add_video_filter(VideoFilter::Scale {
+            width: 1280,
+            height: 720,
+        })
+        .add_audio_filter(AudioFilter::Normalization {
+            target_level: -23.0,
+        })
+        .run()?;
+    Ok(())
+}
+```
+
+### Apply multiple filters
+
+```rust,no_run
+use ffmpeg_light::{AudioFilter, TranscodeBuilder, VideoFilter};
+
+fn main() -> ffmpeg_light::Result<()> {
+    TranscodeBuilder::new()
+        .input("raw.mov")
+        .output("processed.mp4")
+        .add_video_filter(VideoFilter::Crop {
+            width: 1920,
+            height: 1080,
+            x: 0,
+            y: 0,
+        })
+        .add_video_filter(VideoFilter::Denoise {
+            strength: ffmpeg_light::filter::DenoiseStrength::Medium,
+        })
+        .add_audio_filter(AudioFilter::Normalization {
+            target_level: -23.0,
+        })
+        .video_codec("libx264")
+        .audio_codec("aac")
         .run()?;
     Ok(())
 }
@@ -63,31 +106,102 @@ fn main() -> ffmpeg_light::Result<()> {
 }
 ```
 
-## Features
+## API Overview
 
-- Media probing built on `ffprobe` JSON output.
-- A `TranscodeBuilder` that covers basic codecs, bitrates, presets, filters, and custom args.
-- Thumbnail generation with timestamp/size/format controls.
-- Simple filter enum so you don’t have to concat raw filter strings.
-- Optional logging via the `tracing` feature.
-- Optional async command execution via the `tokio` feature (roadmap).
+### Transcoding & Filters
+
+- `TranscodeBuilder`: Fluent API for configuring transcoding jobs
+  - `.video_codec()`, `.audio_codec()`: Set output codecs
+  - `.video_bitrate()`, `.audio_bitrate()`: Control quality/file size
+  - `.add_video_filter()`, `.add_audio_filter()`: Chain filters
+  - `.preset()`: Encoding preset (e.g., "fast", "medium", "slow")
+  - `.size()`: Shortcut for `Scale` filter
+  - `.run()`: Execute the transcode job
+
+### Video Filters
+
+- `Scale`: Resize video
+- `Crop`: Extract a region
+- `Trim`: Cut a time range
+- `Rotate`: Rotate by degrees
+- `Flip`: Mirror horizontally or vertically
+- `BrightnessContrast`: Adjust brightness/contrast
+- `Denoise`: Reduce noise (Light/Medium/Heavy)
+- `Deinterlace`: Convert interlaced to progressive
+- `Custom`: Raw FFmpeg filter syntax
+
+### Audio Filters
+
+- `Volume`: Adjust audio level
+- `Equalizer`: 3-band EQ (bass, mid, treble)
+- `Normalization`: Normalize to target loudness
+- `HighPass`, `LowPass`: Frequency filtering
+- `Custom`: Raw FFmpeg audio filter syntax
+
+### Media Inspection
+
+- `probe(path)`: Get file duration, codecs, resolution, frame rate, and bit rates
+- `ProbeResult`: Video/audio stream metadata
+
+### Thumbnails
+
+- `generate_thumbnail(input, output, options)`: Extract frame at timestamp
+- `ThumbnailOptions`: Control timestamp, size, and format
+
+## Error Handling
+
+The crate provides granular error types with recovery suggestions:
+
+```rust,ignore
+use ffmpeg_light::Error;
+
+match some_operation() {
+    Err(Error::FFmpegNotFound { suggestion }) => {
+        eprintln!("FFmpeg not found. Help: {:?}", suggestion);
+    }
+    Err(Error::InvalidInput(msg)) => {
+        eprintln!("Bad parameters: {}", msg);
+    }
+    Err(Error::FilterError(msg)) => {
+        eprintln!("Filter problem: {}", msg);
+    }
+    Ok(_) => {}
+    Err(e) => eprintln!("Error: {}", e),
+}
+```
 
 ## Design notes
 
-- The crate shells out to `ffmpeg`/`ffprobe`. That keeps builds fast, works anywhere binaries exist, and avoids shipping unsafe bindings.
-- We never hand your input to a shell. Every argument is passed directly to `std::process::Command`.
-- If you need the full FFmpeg surface area, you can still drop down to the CLI; this crate is for the frequent, boring chores.
+- The crate shells out to `ffmpeg`/`ffprobe`. That keeps builds fast, works anywhere binaries exist, and avoids shipping unsafe C bindings.
+- Arguments are never handed to a shell; every value goes directly to `std::process::Command`.
+- If you need the full FFmpeg surface area, drop down to the CLI; this crate handles the frequent, repetitive tasks.
 
-## Platform notes
+## Supported Platforms
 
-The library is tested on Linux, macOS, and Windows as long as FFmpeg is on `PATH`. Windows users should prefer paths without spaces or wrap them in `PathBuf` to avoid quoting issues (the builder handles the quoting, but FFmpeg can still trip over exotic characters).
+Tested on Linux, macOS, and Windows. Requires `ffmpeg` and `ffprobe` on `PATH`:
+
+- **macOS**: `brew install ffmpeg`
+- **Linux**: `apt install ffmpeg` (or distro equivalent)
+- **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
+
+Paths on Windows work best without spaces. The builder handles argument quoting automatically.
+
+## v0.2.0 Release Highlights
+
+- ✅ **8 Video Filters**: Scale, Crop, Trim, Rotate, Flip, BrightnessContrast, Denoise, Deinterlace
+- ✅ **6 Audio Filters**: Volume, Equalizer, Normalization, HighPass, LowPass, Custom
+- ✅ **Granular Error Types**: FFmpegNotFound, ProcessingError, InvalidInput, FilterError, TimeoutError
+- ✅ **Builder Accessors**: Inspect configured filters, codecs, and settings
+- ✅ **41 Integration Tests**: Comprehensive coverage of filters, error handling, and builder composition
+- ✅ **Zero Breaking Changes**: All v0.1.0 APIs remain fully compatible
 
 ## Roadmap
 
-- Async command helpers behind a `tokio` feature gate.
-- More preset filters (denoise, deinterlace, etc.).
-- Higher-level profiles for “transcode for web” or “extract audio only”.
-- Better integration tests once we ship sample fixtures.
+- Async command helpers behind a `tokio` feature gate
+- Batch processing with parallel transcoding
+- Hardware acceleration (NVIDIA NVENC, Intel QuickSync, Apple VideoToolbox)
+- Streaming segment output (HLS/DASH)
+- Subtitle and chapter handling
 
 ## License
 

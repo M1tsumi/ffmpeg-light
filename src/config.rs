@@ -24,13 +24,13 @@ impl FfmpegLocator {
         let ffmpeg = ffmpeg.into();
         let ffprobe = ffprobe.into();
         if !ffmpeg.exists() {
-            return Err(Error::BinaryNotFound {
-                binary: ffmpeg.display().to_string(),
+            return Err(Error::FFmpegNotFound {
+                suggestion: Some(format!("ffmpeg not found at {}", ffmpeg.display())),
             });
         }
         if !ffprobe.exists() {
-            return Err(Error::BinaryNotFound {
-                binary: ffprobe.display().to_string(),
+            return Err(Error::FFmpegNotFound {
+                suggestion: Some(format!("ffprobe not found at {}", ffprobe.display())),
             });
         }
         Ok(Self {
